@@ -15,7 +15,8 @@ def spam(sock, messages):
 
 
 def open_close(sock):
-    sock.sendall('start:%s' % os.getpid())
+    timeout = random.randint(1, 15)
+    sock.sendall('start:%s:%s' % (os.getpid(), timeout))
     delay = random.randint(1, 10)
     print("Will sleep for %s seconds." % delay)
     time.sleep(delay)

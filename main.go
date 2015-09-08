@@ -19,11 +19,20 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"sync"
 )
 
-func main() {
-	socket := "/tmp/grimreaper.socket"
+type Victims struct {
+	sync.RWMutex
+	procs map[int]int64
+}
 
+var victims = Victims{procs: make(map[int]int64)}
+
+
+func removeOldSocket(socket string) {
+	// remove old socket
+	// todo: check removing with defer
 	_, err := os.Stat(socket)
 	if os.IsExist(err) {
 		fmt.Printf("Socket still exists: ", err)
@@ -32,55 +41,83 @@ func main() {
 			log.Fatal("Cannot remove socket '%v': %v", socket, err)
 		}
 	}
+}
 
-	l, err := net.Listen("unix", socket)
+func main() {
+	socket := "/tmp/grimreaper.socket"
+
+	removeOldSocket(socket)
+
+	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		panic(err)
 	}
-	defer l.Close()
+	defer listener.Close()
 	defer os.Remove(socket)
 
-	victims := make(map[int]int64)
-	go reaper(victims, 5)
+	go reaper(victims)
+	acceptConnections(listener, victims)
+}
 
+
+func acceptConnections(listener net.Listener, victims Victims) {
 	for {
-		conn, err := l.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			log.Fatal("Get client connection error: ", err)
 		}
 
 		fmt.Printf("loc %v\n", conn.LocalAddr())
-		go handleConnection(conn, victims)
+		go handleConnection(conn)
 	}
 }
 
-func reaper(victims map[int]int64, delay int64) {
+func reaper(victims Victims) {
 	for {
-		for key, value := range victims {
-			if time.Now().Unix() > value+int64(delay) {
-				fmt.Printf("Terminating PID %d", key)
-				delete(victims, key)
-				syscall.Kill(key, syscall.SIGTERM)
+
+		now := time.Now().Unix()
+
+		for pid, deadline := range victims.procs {
+			if now > deadline {
+				fmt.Printf("Terminating PID %d", pid)
+				unregisterProcess(pid)
+				go syscall.Kill(pid, syscall.SIGTERM)
 			}
 		}
 	}
 }
 
-func handleConnection(conn net.Conn, victims map[int]int64) {
+
+func registerProcess(pid int, timestamp int64, timeout int64){
+	victims.Lock()
+	victims.procs[pid] = timestamp + timeout
+	victims.Unlock()
+}
+
+func unregisterProcess(pid int) {
+	victims.Lock()
+	fmt.Printf("map: %v", victims.procs)
+	delete(victims.procs, pid)
+	victims.Unlock()
+}
+
+func handleConnection(conn net.Conn) {
 	for {
-		// data, err := bufio.NewReader(conn).ReadString('\n')
-		buf := make([]byte, 512)
+
+		// len("open:65000:86400") => 16
+		// "close:65000"
+		buf := make([]byte, 32)
 		nr, err := conn.Read(buf)
 		if err == io.EOF {
 			return
-		}
-		if err != nil {
+		} else if err != nil {
 			log.Fatal("Get client data error: ", err)
 		}
 
 		raw := string(buf[0:nr])
 		data := strings.Split(raw, ":")
-		if len(data) != 2 {
+		length := len(data)
+		if length < 2 && length > 3 {
 			log.Fatal("Invalid message: ", raw)
 		}
 
@@ -90,18 +127,19 @@ func handleConnection(conn net.Conn, victims map[int]int64) {
 			log.Fatal("Invalid pid: ", data[1])
 		}
 
-		if state == "start" {
-			victims[int(pid)] = time.Now().Unix()
-		} else if state == "done" {
-			delete(victims, int(pid))
+		if state == "start" && length == 3 {
+			timeout, err := strconv.ParseInt(data[2], 10, 32)
+			if err != nil {
+				log.Fatal("Invalid pid: ", data[2])
+			}
+			registerProcess(int(pid), time.Now().Unix(), timeout)
+		} else if state == "done" && length == 2 {
+			unregisterProcess(int(pid))
 		} else {
-			log.Fatal("Unknown state: ", state)
+			log.Fatal("Invalid message: ", raw)
 		}
 
 		//log.Print("%#v\n", data)
 		fmt.Printf("%#v\n", raw)
-		fmt.Printf("%v\n", victims)
-
-		// conn.Close()
 	}
 }
