@@ -1,25 +1,18 @@
 package main
 
-/*
-
-TODO:
- - rewrite to use channels
- - parametrized sock path, sigterm-delay, sigkill-delay
- - debug mode
-
-*/
-
 import (
-	"fmt"
+	"flag"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-	"sync"
 )
 
 type Victims struct {
@@ -27,68 +20,123 @@ type Victims struct {
 	procs map[int]int64
 }
 
-var victims = Victims{procs: make(map[int]int64)}
+var (
+	debug      bool
+	socketPath string
+	logPath    string
+	stdout     bool
+	logFile    *os.File
+	victims    = Victims{procs: make(map[int]int64)}
 
+	Debug    *log.Logger
+	Info     *log.Logger
+	Warning  *log.Logger
+	Error    *log.Logger
+	Critical *log.Logger
+)
+
+func init() {
+	flag.BoolVar(&debug, "debug", false, "Debug mode.")
+	flag.StringVar(&socketPath, "socket", "/tmp/GrimReaper.socket", "Path to the Unix Domain Socket.")
+	flag.StringVar(&logPath, "logpath", "/var/log/GrimReaper.log", "Path to the log file.")
+	flag.BoolVar(&stdout, "stdout", false, "Log to stdout/stderr instead of to the log file.")
+}
+
+func setupLoggers(logFile *os.File) {
+	format := log.Ldate | log.Ltime | log.Lshortfile
+	debugWriter := ioutil.Discard
+
+	if stdout {
+		if debug {
+			debugWriter = os.Stdout
+		}
+		Debug = log.New(debugWriter, "DEBUG: ", format)
+		Info = log.New(os.Stdout, "INFO: ", format)
+		Warning = log.New(os.Stdout, "WARNING: ", format)
+		Error = log.New(os.Stderr, "Error: ", format)
+		Critical = log.New(os.Stderr, "CRITICAL: ", format)
+	} else {
+		if debug {
+			debugWriter = logFile
+		}
+		Debug = log.New(debugWriter, "DEBUG: ", format)
+		Info = log.New(logFile, "INFO: ", format)
+		Warning = log.New(os.Stdout, "WARNING: ", format)
+		Error = log.New(logFile, "ERROR: ", format)
+		Critical = log.New(logFile, "CRITICAL: ", format)
+	}
+}
 
 func removeOldSocket(socket string) {
-	// remove old socket
-	// todo: check removing with defer
 	_, err := os.Stat(socket)
-	if os.IsExist(err) {
-		fmt.Printf("Socket still exists: ", err)
-		err := os.Remove(socket)
-		if err != nil {
-			log.Fatal("Cannot remove socket '%v': %v", socket, err)
-		}
+	if os.IsNotExist(err) {
+		return
+	} else {
+		Critical.Fatalf("Socket still exists: %s\n", socket)
 	}
 }
 
 func main() {
-	socket := "/tmp/grimreaper.socket"
+	flag.Parse()
+	var err error
 
-	removeOldSocket(socket)
+	if !stdout {
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			Critical.Fatalf("Unnable to open the log file(%v): %v", logPath, err)
+		}
+		defer logFile.Close()
+	}
+	setupLoggers(logFile)
 
-	listener, err := net.Listen("unix", socket)
+	removeOldSocket(socketPath)
+
+	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		panic(err)
 	}
+
+	defer Info.Println("Shutting down...")
 	defer listener.Close()
-	defer os.Remove(socket)
+	defer os.Remove(socketPath)
 
 	go reaper(victims)
-	acceptConnections(listener, victims)
-}
+	Info.Printf("Ready to accept connections (%s).\n", socketPath)
+	go acceptConnections(listener, victims)
 
+	// Handle SIGINT and SIGTERM.
+	ch := make(chan os.Signal)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	log.Println(<-ch)
+}
 
 func acceptConnections(listener net.Listener, victims Victims) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Fatal("Get client connection error: ", err)
+			Critical.Fatalf("Got the connection's error: %v\n", err)
 		}
-
-		fmt.Printf("loc %v\n", conn.LocalAddr())
 		go handleConnection(conn)
 	}
 }
 
 func reaper(victims Victims) {
 	for {
-
 		now := time.Now().Unix()
 
 		for pid, deadline := range victims.procs {
 			if now > deadline {
-				fmt.Printf("Terminating PID %d", pid)
+				Warning.Printf("Terminating PID %d\n", pid)
 				unregisterProcess(pid)
 				go syscall.Kill(pid, syscall.SIGTERM)
 			}
 		}
+
+		time.Sleep(300 * time.Millisecond)
 	}
 }
 
-
-func registerProcess(pid int, timestamp int64, timeout int64){
+func registerProcess(pid int, timestamp int64, timeout int64) {
 	victims.Lock()
 	victims.procs[pid] = timestamp + timeout
 	victims.Unlock()
@@ -96,7 +144,7 @@ func registerProcess(pid int, timestamp int64, timeout int64){
 
 func unregisterProcess(pid int) {
 	victims.Lock()
-	fmt.Printf("map: %v", victims.procs)
+	Debug.Printf("map: %v\n", victims.procs)
 	delete(victims.procs, pid)
 	victims.Unlock()
 }
@@ -104,42 +152,39 @@ func unregisterProcess(pid int) {
 func handleConnection(conn net.Conn) {
 	for {
 
-		// len("open:65000:86400") => 16
-		// "close:65000"
 		buf := make([]byte, 32)
 		nr, err := conn.Read(buf)
 		if err == io.EOF {
 			return
 		} else if err != nil {
-			log.Fatal("Get client data error: ", err)
+			Error.Printf("Got data error: ", err)
 		}
 
 		raw := string(buf[0:nr])
 		data := strings.Split(raw, ":")
 		length := len(data)
 		if length < 2 && length > 3 {
-			log.Fatal("Invalid message: ", raw)
+			Error.Printf("Invalid message: ", raw)
 		}
 
 		state := data[0]
 		pid, err := strconv.ParseInt(data[1], 10, 32)
 		if err != nil {
-			log.Fatal("Invalid pid: ", data[1])
+			Error.Printf("Invalid PID: ", data[1])
 		}
 
-		if state == "start" && length == 3 {
+		if state == "register" && length == 3 {
 			timeout, err := strconv.ParseInt(data[2], 10, 32)
 			if err != nil {
-				log.Fatal("Invalid pid: ", data[2])
+				Error.Printf("Invalid timeout: ", data[2])
 			}
 			registerProcess(int(pid), time.Now().Unix(), timeout)
-		} else if state == "done" && length == 2 {
+		} else if state == "unregister" && length == 2 {
 			unregisterProcess(int(pid))
 		} else {
-			log.Fatal("Invalid message: ", raw)
+			Error.Printf("Invalid message: ", raw)
 		}
 
-		//log.Print("%#v\n", data)
-		fmt.Printf("%#v\n", raw)
+		Debug.Printf("Received message: %#v\n", raw)
 	}
 }
