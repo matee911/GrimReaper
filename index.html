@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-dark.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <title>GrimReaper by matee911</title>
+  </head>
+
+  <body>
+
+    <header>
+      <div class="container">
+        <h1>GrimReaper</h1>
+        <h2>The process killer</h2>
+
+        <section id="downloads">
+          <a href="https://github.com/matee911/GrimReaper/zipball/master" class="btn">Download as .zip</a>
+          <a href="https://github.com/matee911/GrimReaper/tarball/master" class="btn">Download as .tar.gz</a>
+          <a href="https://github.com/matee911/GrimReaper" class="btn btn-github"><span class="icon"></span>View on GitHub</a>
+        </section>
+      </div>
+    </header>
+
+    <div class="container">
+      <section id="main_content">
+        <h1>
+<a id="grim-reaper---the-process-killer" class="anchor" href="#grim-reaper---the-process-killer" aria-hidden="true"><span class="octicon octicon-link"></span></a>Grim Reaper - the process killer</h1>
+
+<p><a href="https://travis-ci.org/matee911/GrimReaper"><img src="https://travis-ci.org/matee911/GrimReaper.svg" alt="Build Status"></a>
+<a href="https://github.com/matee911/GrimReaper/issues"><img src="https://img.shields.io/github/issues/matee911/GrimReaper.svg" alt="GitHub issues"></a>
+<a href="https://github.com/matee911/GrimReaper/blob/master/LICENSE"><img src="https://img.shields.io/github/license/matee911/GrimReaper.svg" alt="GitHub license"></a>
+<a href=""><img src="https://img.shields.io/github/tag/matee911/GrimReaper.svg" alt="GitHub tag"></a>
+<a href=""><img src="https://img.shields.io/github/release/matee911/GrimReaper.svg" alt="GitHub release"></a>
+<a href=""><img src="https://img.shields.io/github/commits-since/matee911/GrimReaper/0.1.0a1.svg" alt="GitHub commits"></a>
+<a href="https://twitter.com/intent/tweet?text=Wow:&amp;url=%5Bobject%20Object%5D"><img src="https://img.shields.io/twitter/url/https/github.com/matee911/GrimReaper.svg?style=social" alt="Twitter"></a></p>
+
+<hr>
+
+<p>GrimReaper is a process killer, originally written to solve a problem of too long processed requests by the Django/flup.
+Any process can communicate with GrimReaper by the unix domain socket, and send the command to register itself (or other process) with the time (and the PID).
+If the GrimReaper doesn't receive the unregister command (with the same PID) before time passes, it will kill that process.</p>
+
+<h2>
+<a id="who-uses-grim-reaper" class="anchor" href="#who-uses-grim-reaper" aria-hidden="true"><span class="octicon octicon-link"></span></a>Who uses Grim Reaper</h2>
+
+<ul>
+<li><a href="http://ipla.tv/">ipla.tv</a></li>
+</ul>
+
+<h2>
+<a id="usage" class="anchor" href="#usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage</h2>
+
+<div class="highlight highlight-bash"><pre>Usage of GrimReaper:
+  -debug
+        Debug mode.
+  -logpath string
+        Path to the log file. (default <span class="pl-s"><span class="pl-pds">"</span>/var/log/GrimReaper.log<span class="pl-pds">"</span></span>)
+  -socket string
+        Path to the Unix Domain Socket. (default <span class="pl-s"><span class="pl-pds">"</span>/tmp/GrimReaper.socket<span class="pl-pds">"</span></span>)
+  -stdout
+        Log to stdout/stderr instead of to the log file.</pre></div>
+
+<h2>
+<a id="clients" class="anchor" href="#clients" aria-hidden="true"><span class="octicon octicon-link"></span></a>Clients</h2>
+
+<h3>
+<a id="python" class="anchor" href="#python" aria-hidden="true"><span class="octicon octicon-link"></span></a>Python</h3>
+
+<ul>
+<li><a href="http://github.com/matee911/GrimReapersPie">GrimReapersPie</a></li>
+</ul>
+
+<h2>
+<a id="credits" class="anchor" href="#credits" aria-hidden="true"><span class="octicon octicon-link"></span></a>Credits</h2>
+
+<ul>
+<li>
+<a href="https://github.com/ekamil">Kamil Essekkat</a> Project's name</li>
+</ul>
+      </section>
+    </div>
+
+    
+  </body>
+</html>
