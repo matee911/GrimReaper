@@ -29,7 +29,7 @@ var (
 	socketPath  string
 	stdout      bool
 	version     string
-	victims     = Victims{procs: make(map[int]int64)}
+	victims     = &Victims{procs: make(map[int]int64)}
 
 	Debug    *log.Logger
 	Info     *log.Logger
@@ -120,7 +120,7 @@ func main() {
 	log.Println(<-ch)
 }
 
-func acceptConnections(listener net.Listener, victims Victims) {
+func acceptConnections(listener net.Listener, victims *Victims) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -130,7 +130,7 @@ func acceptConnections(listener net.Listener, victims Victims) {
 	}
 }
 
-func reaper(victims Victims) {
+func reaper(victims *Victims) {
 	for {
 		now := time.Now().Unix()
 
