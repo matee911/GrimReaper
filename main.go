@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -21,12 +22,14 @@ type Victims struct {
 }
 
 var (
-	debug      bool
-	socketPath string
-	logPath    string
-	stdout     bool
-	logFile    *os.File
-	victims    = Victims{procs: make(map[int]int64)}
+	debug       bool
+	logFile     *os.File
+	logPath     string
+	showVersion bool
+	socketPath  string
+	stdout      bool
+	version     string
+	victims     = Victims{procs: make(map[int]int64)}
 
 	Debug    *log.Logger
 	Info     *log.Logger
@@ -40,6 +43,7 @@ func init() {
 	flag.StringVar(&socketPath, "socket", "/tmp/GrimReaper.socket", "Path to the Unix Domain Socket.")
 	flag.StringVar(&logPath, "logpath", "/var/log/GrimReaper.log", "Path to the log file.")
 	flag.BoolVar(&stdout, "stdout", false, "Log to stdout/stderr instead of to the log file.")
+	flag.BoolVar(&showVersion, "version", false, "print the GrimReaper version information and exit")
 }
 
 func setupLoggers(logFile *os.File) {
@@ -72,18 +76,24 @@ func removeOldSocket(socket string) {
 	if os.IsNotExist(err) {
 		return
 	} else {
-		Critical.Fatalf("Socket still exists: %s\n", socket)
+		Critical.Fatalf("Socket still exists: %s", socket)
 	}
 }
 
 func main() {
-	flag.Parse()
 	var err error
+
+	flag.Parse()
+	if showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	if !stdout {
 		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
-			Critical.Fatalf("Unnable to open the log file(%v): %v", logPath, err)
+			fmt.Printf("Unable to open the log file(%v): %v", logPath, err)
+			os.Exit(1)
 		}
 		defer logFile.Close()
 	}
@@ -101,7 +111,7 @@ func main() {
 	defer os.Remove(socketPath)
 
 	go reaper(victims)
-	Info.Printf("Ready to accept connections (%s).\n", socketPath)
+	Info.Printf("Ready to accept connections (%s).", socketPath)
 	go acceptConnections(listener, victims)
 
 	// Handle SIGINT and SIGTERM.
@@ -114,7 +124,7 @@ func acceptConnections(listener net.Listener, victims Victims) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			Critical.Fatalf("Got the connection's error: %v\n", err)
+			Critical.Fatalf("Got the connection's error: %v", err)
 		}
 		go handleConnection(conn)
 	}
@@ -126,7 +136,7 @@ func reaper(victims Victims) {
 
 		for pid, deadline := range victims.procs {
 			if now > deadline {
-				Warning.Printf("Terminating PID %d\n", pid)
+				Warning.Printf("Terminating PID %d", pid)
 				unregisterProcess(pid)
 				go syscall.Kill(pid, syscall.SIGTERM)
 			}
@@ -138,15 +148,18 @@ func reaper(victims Victims) {
 
 func registerProcess(pid int, timestamp int64, timeout int64) {
 	victims.Lock()
+	defer victims.Unlock()
+
 	victims.procs[pid] = timestamp + timeout
-	victims.Unlock()
 }
 
 func unregisterProcess(pid int) {
 	victims.Lock()
-	Debug.Printf("map: %v\n", victims.procs)
+	defer victims.Unlock()
+
+	Debug.Printf("map: %v", victims.procs)
 	delete(victims.procs, pid)
-	victims.Unlock()
+
 }
 
 func handleConnection(conn net.Conn) {
@@ -157,34 +170,34 @@ func handleConnection(conn net.Conn) {
 		if err == io.EOF {
 			return
 		} else if err != nil {
-			Error.Printf("Got data error: ", err)
+			Error.Printf("Got data error: %v", err)
 		}
 
 		raw := string(buf[0:nr])
 		data := strings.Split(raw, ":")
 		length := len(data)
 		if length < 2 && length > 3 {
-			Error.Printf("Invalid message: ", raw)
+			Error.Printf("Invalid message: %v", raw)
 		}
 
 		state := data[0]
 		pid, err := strconv.ParseInt(data[1], 10, 32)
 		if err != nil {
-			Error.Printf("Invalid PID: ", data[1])
+			Error.Printf("Invalid PID: %v", data[1])
 		}
 
 		if state == "register" && length == 3 {
 			timeout, err := strconv.ParseInt(data[2], 10, 32)
 			if err != nil {
-				Error.Printf("Invalid timeout: ", data[2])
+				Error.Printf("Invalid timeout: %v", data[2])
 			}
 			registerProcess(int(pid), time.Now().Unix(), timeout)
 		} else if state == "unregister" && length == 2 {
 			unregisterProcess(int(pid))
 		} else {
-			Error.Printf("Invalid message: ", raw)
+			Error.Printf("Invalid message: %v", raw)
 		}
 
-		Debug.Printf("Received message: %#v\n", raw)
+		Debug.Printf("Received message: %#v", raw)
 	}
 }
