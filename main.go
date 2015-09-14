@@ -71,12 +71,12 @@ func setupLoggers(logFile *os.File) {
 	}
 }
 
-func removeOldSocket(socket string) {
+func oldSocketExists(socket string) bool {
 	_, err := os.Stat(socket)
 	if os.IsNotExist(err) {
-		return
+		return false
 	} else {
-		Critical.Fatalf("Socket still exists: %s", socket)
+		return true
 	}
 }
 
@@ -99,7 +99,9 @@ func main() {
 	}
 	setupLoggers(logFile)
 
-	removeOldSocket(socketPath)
+	if oldSocketExists(socketPath) {
+		Critical.Fatalf("Socket still exists: %s", socketPath)
+	}
 
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
