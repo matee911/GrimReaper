@@ -32,6 +32,8 @@ Usage of GrimReaper:
     	Path to the Unix Domain Socket. (default "/tmp/GrimReaper.socket")
   -stdout
     	Log to stdout/stderr instead of to the log file.
+  -version
+    	print the GrimReaper version information and exit
 ```
 
 ## Clients
@@ -43,3 +45,4 @@ Usage of GrimReaper:
 ## Credits
 
 * [Kamil Essekkat](https://github.com/ekamil) Project's name
+* [Kamil Dzięcioł](https://github.com/woodpeaker) Code reviews
