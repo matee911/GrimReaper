@@ -45,3 +45,4 @@ Usage of GrimReaper:
 ## Credits
 
 * [Kamil Essekkat](https://github.com/ekamil) Project's name
+* [Kamil Dzięcioł](https://github.com/woodpeaker) Code reviews
