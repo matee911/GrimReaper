@@ -62,7 +62,7 @@ func init() {
 	flag.StringVar(&socketPath, "socket", "/tmp/GrimReaper.socket", "Path to the Unix Domain Socket.")
 	flag.StringVar(&logPath, "logpath", "/var/log/GrimReaper.log", "Path to the log file.")
 	flag.BoolVar(&stdout, "stdout", false, "Log to stdout/stderr instead of to the log file.")
-	flag.BoolVar(&showVersion, "version", false, "print the GrimReaper version information and exit")
+	flag.BoolVar(&showVersion, "version", false, "Print the GrimReaper version information and exit.")
 
 	logWriters = map[LogLevel]io.Writer{
 		CRITICAL: ioutil.Discard,
