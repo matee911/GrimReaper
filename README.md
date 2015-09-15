@@ -24,16 +24,16 @@ If the GrimReaper doesn't receive the unregister command (with the same PID) bef
 
 ```bash
 Usage of GrimReaper:
-  -debug
-    	Debug mode.
   -logpath string
     	Path to the log file. (default "/var/log/GrimReaper.log")
   -socket string
     	Path to the Unix Domain Socket. (default "/tmp/GrimReaper.socket")
   -stdout
     	Log to stdout/stderr instead of to the log file.
+  -verbose string
+    	Increase verbosity by passing one or more letters.
   -version
-    	print the GrimReaper version information and exit
+    	print the GrimReaper version information and exit.
 ```
 
 ## Clients

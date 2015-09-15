@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+- `-verbose` flag added.
+- `-debug` flag removed.
+- Log writer minor fix.
+
 ## 0.1.0-alpha2 (2015-09-14)
 
 - Makefile
