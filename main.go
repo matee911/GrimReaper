@@ -16,88 +16,115 @@ import (
 	"time"
 )
 
+// Victims represents a collection of PIDs with their timestamps.
 type Victims struct {
 	sync.RWMutex
 	procs map[int]int64
 }
 
+// LogLevel describes how verbose logs are.
+type LogLevel uint8
+
+// LogLevels definitions.
+const (
+	CRITICAL LogLevel = 0 << iota
+	ERROR    LogLevel = 1
+	WARNING  LogLevel = 2
+	INFO     LogLevel = 3
+	DEBUG    LogLevel = 4
+)
+
 var (
-	debug       bool
 	logFile     *os.File
+	verbose     string
 	logPath     string
 	showVersion bool
 	socketPath  string
 	stdout      bool
 	version     string
 	victims     = &Victims{procs: make(map[int]int64)}
+	logWriters  map[LogLevel]io.Writer
 
-	Debug    *log.Logger
-	Info     *log.Logger
-	Warning  *log.Logger
-	Error    *log.Logger
+	// Debug is a logger with "DEBUG" level.
+	Debug *log.Logger
+	// Info is a logger with "INFO" level.
+	Info *log.Logger
+	// Warning is a logger with "WARNING" level.
+	Warning *log.Logger
+	// Error is a logger with "ERROR" level.
+	Error *log.Logger
+	// Critical is a logger with "CRITICAL" level.
 	Critical *log.Logger
 )
 
 func init() {
-	flag.BoolVar(&debug, "debug", false, "Debug mode.")
+	flag.StringVar(&verbose, "verbose", "", "Increase verbosity by passing one or more letters.")
 	flag.StringVar(&socketPath, "socket", "/tmp/GrimReaper.socket", "Path to the Unix Domain Socket.")
 	flag.StringVar(&logPath, "logpath", "/var/log/GrimReaper.log", "Path to the log file.")
 	flag.BoolVar(&stdout, "stdout", false, "Log to stdout/stderr instead of to the log file.")
 	flag.BoolVar(&showVersion, "version", false, "print the GrimReaper version information and exit")
+
+	logWriters = map[LogLevel]io.Writer{
+		CRITICAL: ioutil.Discard,
+		ERROR:    ioutil.Discard,
+		WARNING:  ioutil.Discard,
+		INFO:     ioutil.Discard,
+		DEBUG:    ioutil.Discard,
+	}
+
 }
 
-func setupLoggers(logFile *os.File) {
+func configureLoggers(writer io.Writer) {
 	format := log.Ldate | log.Ltime | log.Lshortfile
-	debugWriter := ioutil.Discard
 
-	if stdout {
-		if debug {
-			debugWriter = os.Stdout
-		}
-		Debug = log.New(debugWriter, "DEBUG: ", format)
-		Info = log.New(os.Stdout, "INFO: ", format)
-		Warning = log.New(os.Stdout, "WARNING: ", format)
-		Error = log.New(os.Stderr, "Error: ", format)
-		Critical = log.New(os.Stderr, "CRITICAL: ", format)
-	} else {
-		if debug {
-			debugWriter = logFile
-		}
-		Debug = log.New(debugWriter, "DEBUG: ", format)
-		Info = log.New(logFile, "INFO: ", format)
-		Warning = log.New(os.Stdout, "WARNING: ", format)
-		Error = log.New(logFile, "ERROR: ", format)
-		Critical = log.New(logFile, "CRITICAL: ", format)
+	if !stdout {
+		writer = logFile
 	}
+
+	// Overwrite default writers
+	for level := range logWriters {
+		if len(verbose) >= int(level) {
+			logWriters[level] = writer
+		}
+	}
+
+	Critical = log.New(logWriters[INFO], "CRITICAL: ", format)
+	Error = log.New(logWriters[INFO], "ERROR: ", format)
+	Warning = log.New(logWriters[WARNING], "WARNING: ", format)
+	Info = log.New(logWriters[INFO], "INFO: ", format)
+	Debug = log.New(logWriters[DEBUG], "DEBUG: ", format)
 }
 
 func oldSocketExists(socket string) bool {
-	_, err := os.Stat(socket)
-	if os.IsNotExist(err) {
+	if _, err := os.Stat(socket); os.IsNotExist(err) {
 		return false
-	} else {
-		return true
 	}
+	return true
 }
 
 func main() {
 	var err error
-
 	flag.Parse()
+
 	if showVersion {
 		fmt.Println(version)
 		os.Exit(0)
 	}
 
-	if !stdout {
+	var logWriter io.Writer
+	if stdout {
+		logWriter = os.Stdout
+	} else {
 		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			fmt.Printf("Unable to open the log file(%v): %v", logPath, err)
 			os.Exit(1)
 		}
+
+		logWriter = logFile
 		defer logFile.Close()
 	}
-	setupLoggers(logFile)
+	configureLoggers(logWriter)
 
 	if oldSocketExists(socketPath) {
 		Critical.Fatalf("Socket still exists: %s", socketPath)
