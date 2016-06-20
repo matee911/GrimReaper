@@ -26,6 +26,10 @@
 
 Update `CHANGES.md` file.
 
+### Readme.md
+
+Update badges and content.
+
 ### Releasing
 
     ```sh
