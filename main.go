@@ -155,6 +155,7 @@ func main() {
 	stats.Lock()
 	stats.startTime = time.Now().Unix()
 	stats.Unlock()
+	Info.Printf("Starting GrimReaper %s", version)
 
 	go reaper(victims)
 	go statsLogger(stats)
@@ -266,7 +267,7 @@ func unregisterCommandCall(args []string) (err error) {
 }
 
 func processMessage(raw string, currentTimestamp int64) (message string, err error) {
-	Info.Printf("Received message: %#v", raw)
+	Debug.Printf("Received message: %#v", raw)
 	/*
 		Accepted commands:
 
@@ -287,20 +288,22 @@ func processMessage(raw string, currentTimestamp int64) (message string, err err
 
 	switch command {
 	case "register":
-		stats.registerCalls++
 		err = registerCommandCall(data[1:], currentTimestamp)
 		if err == nil {
 			message = "OK"
+			stats.registerCalls++
 		} else {
 			message = "ERROR"
+			stats.invalidCommandCalls++
 		}
 	case "unregister":
-		stats.unregisterCalls++
 		err = unregisterCommandCall(data[1:])
 		if err == nil {
 			message = "OK"
+			stats.unregisterCalls++
 		} else {
 			message = "ERROR"
+			stats.invalidCommandCalls++
 		}
 	case "ping":
 		stats.pingCalls++
@@ -330,7 +333,7 @@ func handleConnection(conn net.Conn) {
 
 		raw := string(buf[0:nr])
 		message, err := processMessage(raw, time.Now().Unix())
-		Info.Printf("%s: %s", message, err)
+		Debug.Printf("%s: %s", message, err)
 		// TODO(matee): Send message as response
 	}
 }

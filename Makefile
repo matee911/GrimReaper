@@ -18,9 +18,7 @@ test:
 
 linux32:
 	mkdir -p bin
-	ls -la
 	GOARCH=386 GOOS=linux go build -ldflags "-X main.version '$(VERSION)'"
-	ls -la
 	mv GrimReaper bin/GrimReaper-linux_i386
 
 linux64:
