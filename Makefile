@@ -14,7 +14,7 @@ fmt:
 	go fmt ./...
 
 test:
-	go test -v ./...
+	go test -v ./... -bench=. -benchtime 1s -benchmem
 
 linux32:
 	mkdir -p bin

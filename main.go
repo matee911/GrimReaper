@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,18 @@ import (
 type Victims struct {
 	sync.RWMutex
 	procs map[int]int64
+}
+
+// Stats collects informations and statistics about the GrimReaper.
+type Stats struct {
+	sync.RWMutex
+	startTime           int64
+	registerCalls       int64
+	unregisterCalls     int64
+	pingCalls           int64
+	statsCalls          int64
+	kills               int64
+	invalidCommandCalls int64
 }
 
 // LogLevel describes how verbose logs are.
@@ -43,6 +56,7 @@ var (
 	stdout      bool
 	version     string
 	victims     = &Victims{procs: make(map[int]int64)}
+	stats       = &Stats{}
 	logWriters  map[LogLevel]io.Writer
 
 	// Debug is a logger with "DEBUG" level.
@@ -71,7 +85,6 @@ func init() {
 		INFO:     ioutil.Discard,
 		DEBUG:    ioutil.Discard,
 	}
-
 }
 
 func configureLoggers(writer io.Writer) {
@@ -139,11 +152,17 @@ func main() {
 	defer listener.Close()
 	defer os.Remove(socketPath)
 
+	stats.Lock()
+	stats.startTime = time.Now().Unix()
+	stats.Unlock()
+	Info.Printf("Starting GrimReaper %s", version)
+
 	go reaper(victims)
+	go statsLogger(stats)
 	Info.Printf("Ready to accept connections (%s).", socketPath)
 	go acceptConnections(listener, victims)
 
-	// Handle SIGINT and SIGTERM.
+	// Finish execution after SIGINT or SIGTERM is received.
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(<-ch)
@@ -158,6 +177,21 @@ func acceptConnections(listener net.Listener, victims *Victims) {
 		go handleConnection(conn)
 	}
 }
+func statsLogger(stats *Stats) {
+	for {
+		Info.Printf("Uptime %ds/%dd; Kills: %d; Register: %d Unregister: %d; Ping: %d; Stats: %d; Invalid: %d",
+			time.Now().Unix()-stats.startTime,
+			(time.Now().Unix()-stats.startTime)/86400,
+			stats.kills,
+			stats.registerCalls,
+			stats.unregisterCalls,
+			stats.pingCalls,
+			stats.statsCalls,
+			stats.invalidCommandCalls,
+		)
+		time.Sleep(60 * time.Second)
+	}
+}
 
 func reaper(victims *Victims) {
 	for {
@@ -167,6 +201,9 @@ func reaper(victims *Victims) {
 			if now > deadline {
 				Warning.Printf("Terminating PID %d", pid)
 				unregisterProcess(pid)
+				stats.Lock()
+				stats.kills++
+				stats.Unlock()
 				go syscall.Kill(pid, syscall.SIGTERM)
 			}
 		}
@@ -175,25 +212,117 @@ func reaper(victims *Victims) {
 	}
 }
 
-func registerProcess(pid int, timestamp int64, timeout int64) {
+func registerProcess(pid int, timestamp int64, timeout int64) bool {
 	victims.Lock()
 	defer victims.Unlock()
 
 	victims.procs[pid] = timestamp + timeout
+	return true
 }
 
-func unregisterProcess(pid int) {
+func unregisterProcess(pid int) bool {
 	victims.Lock()
 	defer victims.Unlock()
 
 	Debug.Printf("map: %v", victims.procs)
 	delete(victims.procs, pid)
+	return true
+}
 
+func registerCommandCall(args []string, currentTimestamp int64) (err error) {
+	if len(args) != 2 {
+		return errors.New("Bad number of arguments")
+	}
+
+	pid, err := strconv.ParseInt(args[0], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	timeout, err := strconv.ParseInt(args[1], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	if !registerProcess(int(pid), currentTimestamp, timeout) {
+		return errors.New("Cannot register process")
+	}
+	return
+}
+
+func unregisterCommandCall(args []string) (err error) {
+	if len(args) != 1 {
+		return errors.New("Bad number of arguments")
+	}
+
+	pid, err := strconv.ParseInt(args[0], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	if !unregisterProcess(int(pid)) {
+		return errors.New("Cannot unregister process")
+	}
+	return
+}
+
+func processMessage(raw string, currentTimestamp int64) (message string, err error) {
+	Debug.Printf("Received message: %#v", raw)
+	/*
+		Accepted commands:
+
+		ping
+		register:<PID>:<timeout>
+		stats
+		unregister:<PID>
+
+		Commands enhancements proposals:
+
+		register:<PID>:<timeout>:<optional additional message - url
+	*/
+	data := strings.Split(raw, ":")
+	command := data[0]
+
+	stats.Lock()
+	defer stats.Unlock()
+
+	switch command {
+	case "register":
+		err = registerCommandCall(data[1:], currentTimestamp)
+		if err == nil {
+			message = "OK"
+			stats.registerCalls++
+		} else {
+			message = "ERROR"
+			stats.invalidCommandCalls++
+		}
+	case "unregister":
+		err = unregisterCommandCall(data[1:])
+		if err == nil {
+			message = "OK"
+			stats.unregisterCalls++
+		} else {
+			message = "ERROR"
+			stats.invalidCommandCalls++
+		}
+	case "ping":
+		stats.pingCalls++
+		message = "OK"
+	case "stats":
+		stats.statsCalls++
+		message = "OK"
+	default:
+		stats.invalidCommandCalls++
+		message = "ERROR"
+		err = errors.New("Unknown command")
+	}
+	return
 }
 
 func handleConnection(conn net.Conn) {
 	for {
 
+		// TODO(matee): Split messages by EOL
 		buf := make([]byte, 32)
 		nr, err := conn.Read(buf)
 		if err == io.EOF {
@@ -203,30 +332,8 @@ func handleConnection(conn net.Conn) {
 		}
 
 		raw := string(buf[0:nr])
-		data := strings.Split(raw, ":")
-		length := len(data)
-		if length < 2 && length > 3 {
-			Error.Printf("Invalid message: %v", raw)
-		}
-
-		state := data[0]
-		pid, err := strconv.ParseInt(data[1], 10, 32)
-		if err != nil {
-			Error.Printf("Invalid PID: %v", data[1])
-		}
-
-		if state == "register" && length == 3 {
-			timeout, err := strconv.ParseInt(data[2], 10, 32)
-			if err != nil {
-				Error.Printf("Invalid timeout: %v", data[2])
-			}
-			registerProcess(int(pid), time.Now().Unix(), timeout)
-		} else if state == "unregister" && length == 2 {
-			unregisterProcess(int(pid))
-		} else {
-			Error.Printf("Invalid message: %v", raw)
-		}
-
-		Debug.Printf("Received message: %#v", raw)
+		message, err := processMessage(raw, time.Now().Unix())
+		Debug.Printf("%s: %s", message, err)
+		// TODO(matee): Send message as response
 	}
 }
