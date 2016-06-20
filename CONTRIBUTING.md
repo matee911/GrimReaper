@@ -21,3 +21,23 @@
    ```sh
    go build
    ```
+
+### Changes.md
+
+Update `CHANGES.md` file.
+
+### Releasing
+
+    ```sh
+    $ git tag
+    0.1
+    0.1.0-alpha2
+    0.1.0a1
+    $ git tag -a 0.1 -m "message"
+    $ git push origin --tags
+
+		# if you forgot about something then...
+
+    $ git tag -d 0.1
+    $ git push origin :refs/tags/0.1
+    ```
