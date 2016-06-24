@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased changes
+
+- Stats counters types has changed to uint64
+- Binary files reorganization
+- Added `-force-cleanup` flag
+
 ## 0.1 (2016-06-20)
 
 - Use `-verbose vvvv` (up to 4 letters) to log with the specific level
@@ -8,8 +14,6 @@
 - `-debug` flag is removed (use `-verbose vvvv`)
 - Added some code comments
 - Tests and benchmark for command parsing
-
-## Unreleased changes
 
 ## 0.1.0-alpha2 (2015-09-14)
 

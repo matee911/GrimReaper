@@ -27,12 +27,12 @@ type Victims struct {
 type Stats struct {
 	sync.RWMutex
 	startTime           int64
-	registerCalls       int64
-	unregisterCalls     int64
-	pingCalls           int64
-	statsCalls          int64
-	kills               int64
-	invalidCommandCalls int64
+	registerCalls       uint64
+	unregisterCalls     uint64
+	pingCalls           uint64
+	statsCalls          uint64
+	kills               uint64
+	invalidCommandCalls uint64
 }
 
 // LogLevel describes how verbose logs are.
@@ -48,16 +48,19 @@ const (
 )
 
 var (
-	logFile     *os.File
-	verbose     string
-	logPath     string
-	showVersion bool
-	socketPath  string
-	stdout      bool
-	version     string
-	victims     = &Victims{procs: make(map[int]int64)}
-	stats       = &Stats{}
-	logWriters  map[LogLevel]io.Writer
+	forceCleanup bool
+	logFile      *os.File
+	logPath      string
+	showVersion  bool
+	socketPath   string
+	stdout       bool
+	verbose      string
+	version      string
+
+	stats   = &Stats{}
+	victims = &Victims{procs: make(map[int]int64)}
+
+	logWriters map[LogLevel]io.Writer
 
 	// Debug is a logger with "DEBUG" level.
 	Debug *log.Logger
@@ -76,7 +79,8 @@ func init() {
 	flag.StringVar(&socketPath, "socket", "/tmp/GrimReaper.socket", "Path to the Unix Domain Socket.")
 	flag.StringVar(&logPath, "logpath", "/var/log/GrimReaper.log", "Path to the log file.")
 	flag.BoolVar(&stdout, "stdout", false, "Log to stdout/stderr instead of to the log file.")
-	flag.BoolVar(&showVersion, "version", false, "print the GrimReaper version information and exit")
+	flag.BoolVar(&showVersion, "version", false, "print the GrimReaper version information and exit.")
+	flag.BoolVar(&forceCleanup, "force-cleanup", false, "Force removing socket file before start.")
 
 	logWriters = map[LogLevel]io.Writer{
 		CRITICAL: ioutil.Discard,
@@ -140,7 +144,13 @@ func main() {
 	configureLoggers(logWriter)
 
 	if oldSocketExists(socketPath) {
-		Critical.Fatalf("Socket still exists: %s", socketPath)
+		if forceCleanup {
+			if os.Remove(socketPath); err != nil {
+				Critical.Fatalf("Cannot remove existing socket: %s", socketPath)
+			}
+		} else {
+			Critical.Fatalf("Socket still exists: %s", socketPath)
+		}
 	}
 
 	listener, err := net.Listen("unix", socketPath)
@@ -266,8 +276,8 @@ func unregisterCommandCall(args []string) (err error) {
 	return
 }
 
-func processMessage(raw string, currentTimestamp int64) (message string, err error) {
-	Debug.Printf("Received message: %#v", raw)
+func processMessage(rawMessage string, currentTimestamp int64) (message string, err error) {
+	Debug.Printf("Received message: %q", rawMessage)
 	/*
 		Accepted commands:
 
@@ -280,7 +290,7 @@ func processMessage(raw string, currentTimestamp int64) (message string, err err
 
 		register:<PID>:<timeout>:<optional additional message - url
 	*/
-	data := strings.Split(raw, ":")
+	data := strings.Split(rawMessage, ":")
 	command := data[0]
 
 	stats.Lock()
@@ -314,26 +324,24 @@ func processMessage(raw string, currentTimestamp int64) (message string, err err
 	default:
 		stats.invalidCommandCalls++
 		message = "ERROR"
-		err = errors.New("Unknown command")
+		err = fmt.Errorf("Unknown command: %q", rawMessage)
 	}
 	return
 }
 
 func handleConnection(conn net.Conn) {
 	for {
-
 		// TODO(matee): Split messages by EOL
 		buf := make([]byte, 32)
-		nr, err := conn.Read(buf)
-		if err == io.EOF {
-			return
-		} else if err != nil {
+		if nr, err := conn.Read(buf); err != nil {
+			if err == io.EOF {
+				return
+			}
 			Error.Printf("Got data error: %v", err)
+		} else {
+			message, err := processMessage(string(buf[0:nr]), time.Now().Unix())
+			Debug.Printf("%s: %s", message, err)
+			// TODO(matee): Send message as response
 		}
-
-		raw := string(buf[0:nr])
-		message, err := processMessage(raw, time.Now().Unix())
-		Debug.Printf("%s: %s", message, err)
-		// TODO(matee): Send message as response
 	}
 }
