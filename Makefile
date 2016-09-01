@@ -1,4 +1,5 @@
 VERSION=$(shell ./version.sh)
+LDFLAGS=-ldflags '-X "main.version=$(VERSION)"'
 
 all: fmt test linux32 linux64 darwin64
 
@@ -18,15 +19,15 @@ test:
 
 linux32:
 	mkdir -p bin/linux_i386
-	GOARCH=386 GOOS=linux go build -ldflags "-X main.version '$(VERSION)'"
+	GOARCH=386 GOOS=linux go build $(LDFLAGS)
 	mv GrimReaper bin/linux_i386/grimreaper
 
 linux64:
 	mkdir -p bin/linux_amd64
-	GOARCH=amd64 GOOS=linux go build -ldflags "-X main.version '$(VERSION)'"
+	GOARCH=amd64 GOOS=linux go build $(LDFLAGS)
 	mv GrimReaper bin/linux_amd64/grimreaper
 
 darwin64:
 	mkdir -p bin/darwin_amd64
-	GOARCH=amd64 GOOS=darwin go build -ldflags "-X main.version '$(VERSION)'"
+	GOARCH=amd64 GOOS=darwin go build $(LDFLAGS)
 	mv GrimReaper bin/darwin_amd64/grimreaper
