@@ -1,13 +1,14 @@
 package main
 
 import (
-	"errors"
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
+	"net/textproto"
 	"os"
 	"os/signal"
 	"strconv"
@@ -203,18 +204,24 @@ func statsLogger(stats *Stats) {
 	}
 }
 
+func killPid(pid int) {
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		Error.Printf("Killing the process: %v", err)
+	}
+}
+
 func reaper(victims *Victims) {
 	for {
 		now := time.Now().Unix()
 
 		for pid, deadline := range victims.procs {
 			if now > deadline {
-				Warning.Printf("Terminating PID %d", pid)
+				Warning.Printf("Terminating PID: %d", pid)
 				unregisterProcess(pid)
 				stats.Lock()
 				stats.kills++
 				stats.Unlock()
-				go syscall.Kill(pid, syscall.SIGTERM)
+				go killPid(pid)
 			}
 		}
 
@@ -241,7 +248,7 @@ func unregisterProcess(pid int) bool {
 
 func registerCommandCall(args []string, currentTimestamp int64) (err error) {
 	if len(args) != 2 {
-		return errors.New("Bad number of arguments")
+		return fmt.Errorf("Bad number of arguments: %v", args)
 	}
 
 	pid, err := strconv.ParseInt(args[0], 10, 32)
@@ -255,14 +262,14 @@ func registerCommandCall(args []string, currentTimestamp int64) (err error) {
 	}
 
 	if !registerProcess(int(pid), currentTimestamp, timeout) {
-		return errors.New("Cannot register process")
+		return fmt.Errorf("Cannot register the process: %v", pid)
 	}
 	return
 }
 
 func unregisterCommandCall(args []string) (err error) {
 	if len(args) != 1 {
-		return errors.New("Bad number of arguments")
+		return fmt.Errorf("Bad number of arguments: %v", args)
 	}
 
 	pid, err := strconv.ParseInt(args[0], 10, 32)
@@ -271,7 +278,7 @@ func unregisterCommandCall(args []string) (err error) {
 	}
 
 	if !unregisterProcess(int(pid)) {
-		return errors.New("Cannot unregister process")
+		return fmt.Errorf("Cannot unregister the process: %v", pid)
 	}
 	return
 }
@@ -330,18 +337,18 @@ func processMessage(rawMessage string, currentTimestamp int64) (message string, 
 }
 
 func handleConnection(conn net.Conn) {
+	reader := bufio.NewReader(conn)
+	tp := textproto.NewReader(reader)
+
 	for {
-		// TODO(matee): Split messages by EOL
-		buf := make([]byte, 32)
-		if nr, err := conn.Read(buf); err != nil {
-			if err == io.EOF {
-				return
-			}
+		if line, err := tp.ReadLine(); err != nil {
 			Error.Printf("Got data error: %v", err)
 		} else {
-			message, err := processMessage(string(buf[0:nr]), time.Now().Unix())
-			Debug.Printf("%s: %s", message, err)
-			// TODO(matee): Send message as response
+			Error.Printf("line: %s", line)
+			message, err := processMessage(line, time.Now().Unix())
+			if err != nil {
+				Error.Printf("%s: %s", message, err)
+			}
 		}
 	}
 }
